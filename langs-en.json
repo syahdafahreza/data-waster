@@ -14,5 +14,11 @@
   "toggleHint": "Select at least one direction",
   "invalidSizeError": "Please enter a valid data size.",
   "slowNetworkWarning": "Your network is not fast enough to efficiently waste your data.",
-  "completionMessage": "Completed {mode} of {size} MB"
+  "completionMessage": "Completed {mode} of {size} MB",
+  "statusIdle": "IDLE",
+  "statusDownload": "DOWNLOADING",
+  "statusUpload": "UPLOADING",
+  "statusDual": "TRANSFERRING",
+  "statusCompleted": "COMPLETED",
+  "speedUnit": "MB/s"
 }

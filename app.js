@@ -53,6 +53,12 @@ class DataWaster {
   /** @type {boolean} */
   #firstResponseReceived = false;
 
+  /** @type {Speedometer|null} */
+  #speedometer = null;
+
+  /** @type {{ time: number, bytes: number }[]} */
+  #speedHistory = [];
+
   constructor() {
     this.threadCountInput = document.getElementById('threadCount');
     this.threadValueDisplay = document.getElementById('threadValue');
@@ -69,6 +75,14 @@ class DataWaster {
     this.downloadProgressBar = document.getElementById('downloadProgress');
     this.uploadProgressBar = document.getElementById('uploadProgress');
     this.statusMessage = document.getElementById('statusMessage');
+
+    const speedometerContainer = document.getElementById('speedometerContainer');
+    if (speedometerContainer && typeof Speedometer !== 'undefined') {
+      this.#speedometer = new Speedometer(speedometerContainer);
+      const isDownloadActive = this.downloadOption?.getAttribute('data-active') === 'true';
+      const isUploadActive = this.uploadOption?.getAttribute('data-active') === 'true';
+      this.#speedometer.setMode(isDownloadActive, isUploadActive);
+    }
 
     this.startButton.addEventListener('click', () => this.toggleOperation());
     this.threadCountInput.addEventListener('input', () => this.updateThreadValue());
@@ -122,6 +136,10 @@ class DataWaster {
 
     if (this.startButton && this.#lang.startButton) {
       this.startButton.textContent = this.#lang.startButton;
+    }
+
+    if (this.#speedometer) {
+      this.#speedometer.setLanguage(this.#lang);
     }
   }
 
@@ -188,6 +206,13 @@ class DataWaster {
     this.threadCountInput.disabled = true;
     this.#running = true;
     this.#startTime = Date.now();
+    this.#speedHistory = [{ time: Date.now(), bytes: 0 }];
+
+    if (this.#speedometer) {
+      this.#speedometer.setMode(this.#isDownloadMode, this.#isUploadMode);
+      this.#speedometer.start();
+    }
+
     this.updateUI();
 
     this.#updateInterval = setInterval(() => this.updateUI(), 50);
@@ -212,6 +237,11 @@ class DataWaster {
     this.downloadOption.disabled = false;
     this.uploadOption.disabled = false;
     this.threadCountInput.disabled = false;
+
+    this.#speedHistory = [];
+    if (this.#speedometer) {
+      this.#speedometer.stop();
+    }
 
     this.updateUI();
 
@@ -513,6 +543,13 @@ class DataWaster {
         }
       }
 
+      const elapsedSeconds = (Date.now() - this.#startTime) / 1000;
+      const speedMbps = elapsedSeconds > 0 ? (totalBytes / this.#MB) / elapsedSeconds : 0;
+
+      if (this.#speedometer) {
+        this.#speedometer.complete(speedMbps);
+      }
+
       this.stop();
 
       this.updateUI();
@@ -564,10 +601,34 @@ class DataWaster {
     const elapsedSeconds = (Date.now() - this.#startTime) / 1000;
     const speedMbps = elapsedSeconds > 0 ? (totalBytes / this.#MB) / elapsedSeconds : 0;
 
+    // Calculate instantaneous speed over a rolling 400-600ms window for real-time responsiveness
+    const now = Date.now();
+    this.#speedHistory.push({ time: now, bytes: totalBytes });
+    while (this.#speedHistory.length > 2 && now - this.#speedHistory[0].time > 500) {
+      this.#speedHistory.shift();
+    }
+
+    let instantSpeedMBps = 0;
+    if (this.#speedHistory.length >= 2) {
+      const oldest = this.#speedHistory[0];
+      const timeDelta = (now - oldest.time) / 1000;
+      if (timeDelta > 0.05) {
+        instantSpeedMBps = ((totalBytes - oldest.bytes) / this.#MB) / timeDelta;
+      }
+    }
+
+    if (instantSpeedMBps <= 0 && speedMbps > 0) {
+      instantSpeedMBps = speedMbps;
+    }
+
+    if (this.#running && this.#speedometer) {
+      this.#speedometer.updateSpeed(instantSpeedMBps);
+    }
+
     this.totalBytesProcessedElement.textContent = (totalBytes / this.#MB).toFixed(2);
     this.bytesDownloadedElement.textContent = (this.#bytesDownloaded / this.#MB).toFixed(2);
     this.bytesUploadedElement.textContent = (this.#bytesUploaded / this.#MB).toFixed(2);
-    this.totalTransferSpeedElement.textContent = speedMbps.toFixed(2);
+    this.totalTransferSpeedElement.textContent = (this.#running && instantSpeedMBps > 0 ? instantSpeedMBps : speedMbps).toFixed(2);
 
     const safeDownloadPercent = Math.min(100, downloadPercent);
     const safeUploadPercent = Math.min(100, uploadPercent);
@@ -605,6 +666,11 @@ class DataWaster {
     }
 
     this.updateStartButtonState();
+    if (this.#speedometer && !this.#running) {
+      const dl = this.downloadOption.getAttribute('data-active') === 'true';
+      const ul = this.uploadOption.getAttribute('data-active') === 'true';
+      this.#speedometer.setMode(dl, ul);
+    }
   }
 
   toggleUploadOption() {
@@ -618,6 +684,11 @@ class DataWaster {
     }
 
     this.updateStartButtonState();
+    if (this.#speedometer && !this.#running) {
+      const dl = this.downloadOption.getAttribute('data-active') === 'true';
+      const ul = this.uploadOption.getAttribute('data-active') === 'true';
+      this.#speedometer.setMode(dl, ul);
+    }
   }
 
   async getFileSize() {
