@@ -231,6 +231,8 @@ class DataWaster {
 
     this.#downloadControllers.forEach(controller => controller?.abort());
     this.#uploadControllers.forEach(controller => controller?.abort());
+    this.#downloadControllers = [];
+    this.#uploadControllers = [];
 
     this.startButton.textContent = this.#lang.startButton || 'Start';
     this.dataSizeInput.disabled = false;
@@ -243,12 +245,12 @@ class DataWaster {
       this.#speedometer.stop();
     }
 
-    this.updateUI();
-
     if (this.#updateInterval) {
       clearInterval(this.#updateInterval);
       this.#updateInterval = null;
     }
+
+    this.updateUI();
   }
 
   startDownload() {
@@ -327,7 +329,9 @@ class DataWaster {
             break;
           }
 
-          const remainingNeeded = this.#targetSize - (this.#bytesDownloaded + this.#bytesUploaded);
+          const remainingNeeded = this.#targetSize > 0
+            ? Math.max(0, this.#targetSize - (this.#bytesDownloaded + this.#bytesUploaded))
+            : value.length;
           const bytesToCount = Math.min(value.length, remainingNeeded);
 
           this.#bytesDownloaded += bytesToCount;
@@ -396,7 +400,9 @@ class DataWaster {
 
           if (!this.#running) break;
 
-          const remainingNeeded = this.#targetSize - (this.#bytesDownloaded + this.#bytesUploaded);
+          const remainingNeeded = this.#targetSize > 0
+            ? Math.max(0, this.#targetSize - (this.#bytesDownloaded + this.#bytesUploaded))
+            : value.length;
           const bytesToCount = Math.min(value.length, remainingNeeded);
 
           this.#bytesDownloaded += bytesToCount;
@@ -445,7 +451,9 @@ class DataWaster {
 
     while (this.#running && !this.isComplete()) {
       try {
-        const remainingNeeded = this.#targetSize - (this.#bytesDownloaded + this.#bytesUploaded);
+        const remainingNeeded = this.#targetSize > 0
+          ? Math.max(0, this.#targetSize - (this.#bytesDownloaded + this.#bytesUploaded))
+          : totalTransferSize;
 
         const queryParamData = this.generateRandomString(4000);
 
@@ -522,35 +530,30 @@ class DataWaster {
     if (this.#targetSize === 0) return false;
 
     const totalBytes = this.#bytesDownloaded + this.#bytesUploaded;
-    return Math.abs(totalBytes - this.#targetSize) < 1;
+    return totalBytes >= this.#targetSize;
   }
 
   completeOperation() {
     if (this.#running) {
       if (this.#targetSize > 0) {
-        const totalBytes = this.#bytesDownloaded + this.#bytesUploaded;
-        if (Math.abs(this.#targetSize - totalBytes) < this.#MB / 100) {
-          if (this.#isDownloadMode && this.#isUploadMode) {
-            const downloadRatio = this.#bytesDownloaded / totalBytes;
-            const uploadRatio = this.#bytesUploaded / totalBytes;
-            this.#bytesDownloaded = this.#targetSize * downloadRatio;
-            this.#bytesUploaded = this.#targetSize * uploadRatio;
-          } else if (this.#isDownloadMode) {
-            this.#bytesDownloaded = this.#targetSize;
-          } else if (this.#isUploadMode) {
-            this.#bytesUploaded = this.#targetSize;
-          }
+        if (this.#isDownloadMode && this.#isUploadMode) {
+          const totalBytes = this.#bytesDownloaded + this.#bytesUploaded;
+          const downloadRatio = totalBytes > 0 ? this.#bytesDownloaded / totalBytes : 0.5;
+          const uploadRatio = totalBytes > 0 ? this.#bytesUploaded / totalBytes : 0.5;
+          this.#bytesDownloaded = this.#targetSize * downloadRatio;
+          this.#bytesUploaded = this.#targetSize * uploadRatio;
+        } else if (this.#isDownloadMode) {
+          this.#bytesDownloaded = this.#targetSize;
+        } else if (this.#isUploadMode) {
+          this.#bytesUploaded = this.#targetSize;
         }
       }
 
-      const elapsedSeconds = (Date.now() - this.#startTime) / 1000;
-      const speedMbps = elapsedSeconds > 0 ? (totalBytes / this.#MB) / elapsedSeconds : 0;
+      this.stop();
 
       if (this.#speedometer) {
-        this.#speedometer.complete(speedMbps);
+        this.#speedometer.complete();
       }
-
-      this.stop();
 
       this.updateUI();
 
@@ -628,7 +631,7 @@ class DataWaster {
     this.totalBytesProcessedElement.textContent = (totalBytes / this.#MB).toFixed(2);
     this.bytesDownloadedElement.textContent = (this.#bytesDownloaded / this.#MB).toFixed(2);
     this.bytesUploadedElement.textContent = (this.#bytesUploaded / this.#MB).toFixed(2);
-    this.totalTransferSpeedElement.textContent = (this.#running && instantSpeedMBps > 0 ? instantSpeedMBps : speedMbps).toFixed(2);
+    this.totalTransferSpeedElement.textContent = this.#running ? (instantSpeedMBps > 0 ? instantSpeedMBps : speedMbps).toFixed(2) : '0';
 
     const safeDownloadPercent = Math.min(100, downloadPercent);
     const safeUploadPercent = Math.min(100, uploadPercent);

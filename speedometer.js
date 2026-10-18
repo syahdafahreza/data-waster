@@ -101,9 +101,6 @@
     #currentAngle = START_ANGLE;
 
     /** @type {number} */
-    #targetAngle = START_ANGLE;
-
-    /** @type {number} */
     #displaySpeed = 0;
 
     /** @type {number} */
@@ -139,7 +136,7 @@
       }
 
       this.#buildDOM();
-      this.#startAnimationLoop();
+      this.#resetVisuals();
     }
 
     #buildDOM() {
@@ -311,7 +308,16 @@
     }
 
     #startAnimationLoop() {
+      if (this.#animId) return;
+      this.#lastFrameTime = performance.now();
+
       const loop = (time) => {
+        if (!this.#isRunning) {
+          this.#resetVisuals();
+          this.#animId = null;
+          return;
+        }
+
         const dt = Math.min((time - this.#lastFrameTime) / 1000, 0.1);
         this.#lastFrameTime = time;
 
@@ -319,7 +325,7 @@
         const speedDelta = this.#targetSpeed - this.#displaySpeed;
         this.#displaySpeed += speedDelta * Math.min(dt * 9, 1);
 
-        if (!this.#isRunning && !this.#isCompleted && this.#displaySpeed < 0.05) {
+        if (this.#displaySpeed < 0.05 && this.#targetSpeed === 0) {
           this.#displaySpeed = 0;
         }
 
@@ -327,20 +333,14 @@
         let targetAngle = speedToAngle(this.#targetSpeed);
 
         // Organic Ookla-style needle flutter when running at active speed
-        if (this.#isRunning && this.#targetSpeed > 0.5) {
+        if (this.#targetSpeed > 0.5) {
           const flutter = (Math.random() - 0.5) * Math.min(this.#targetSpeed * 0.03, 1.2);
           targetAngle = speedToAngle(Math.max(0, this.#targetSpeed + flutter));
-        } else if (!this.#isRunning && !this.#isCompleted) {
-          targetAngle = START_ANGLE;
         }
 
         // Smooth angle with spring/damping interpolation
         const angleDelta = targetAngle - this.#currentAngle;
         this.#currentAngle += angleDelta * Math.min(dt * 8, 1);
-
-        if (!this.#isRunning && !this.#isCompleted && Math.abs(this.#currentAngle - START_ANGLE) < 0.2) {
-          this.#currentAngle = START_ANGLE;
-        }
 
         // Rotate needle
         this.#needle.setAttribute(
@@ -370,6 +370,31 @@
       };
 
       this.#animId = requestAnimationFrame(loop);
+    }
+
+    #stopAnimationLoop() {
+      if (this.#animId) {
+        cancelAnimationFrame(this.#animId);
+        this.#animId = null;
+      }
+    }
+
+    #resetVisuals() {
+      this.#currentAngle = START_ANGLE;
+      this.#displaySpeed = 0;
+      this.#targetSpeed = 0;
+      if (this.#needle) {
+        this.#needle.setAttribute('transform', `rotate(${START_ANGLE}, ${CX}, ${CY})`);
+      }
+      if (this.#activeArc) {
+        this.#activeArc.setAttribute('d', '');
+      }
+      if (this.#speedValueText) {
+        this.#speedValueText.textContent = '0.00';
+      }
+      if (this.#tickElements) {
+        this.#tickElements.forEach(el => el.classList.remove('active'));
+      }
     }
 
     setMode(isDownload, isUpload) {
@@ -409,7 +434,11 @@
       this.#isRunning = true;
       this.#isCompleted = false;
       this.#targetSpeed = 0;
+      this.#displaySpeed = 0;
+      this.#currentAngle = START_ANGLE;
+      this.#resetVisuals();
       this.#updateStatusUI();
+      this.#startAnimationLoop();
     }
 
     updateSpeed(speedMBps) {
@@ -420,14 +449,17 @@
 
     stop() {
       this.#isRunning = false;
-      this.#targetSpeed = 0;
+      this.#isCompleted = false;
+      this.#stopAnimationLoop();
+      this.#resetVisuals();
       this.#updateStatusUI();
     }
 
-    complete(finalSpeed = 0) {
+    complete() {
       this.#isRunning = false;
       this.#isCompleted = true;
-      this.#targetSpeed = Math.max(0, finalSpeed);
+      this.#stopAnimationLoop();
+      this.#resetVisuals();
       this.#updateStatusUI();
     }
 
@@ -455,10 +487,7 @@
     }
 
     destroy() {
-      if (this.#animId) {
-        cancelAnimationFrame(this.#animId);
-        this.#animId = null;
-      }
+      this.#stopAnimationLoop();
     }
   }
 
